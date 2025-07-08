@@ -1,0 +1,15 @@
+psycopg2
+psycopg2-binary
+requests
+uuid
+faker
+fastapi
+pydantic
+starlette
+supabase
+jinja2
+uvicorn
+python-multipart
+python-jose[cryptography]
+
+python-dotenv
