@@ -13,3 +13,5 @@ python-multipart
 python-jose[cryptography]
 
 python-dotenv
+SQLAlchemy
+pydantic[email]
