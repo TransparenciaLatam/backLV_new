@@ -9,8 +9,8 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from db import get_db
-from models import Clientes
-from schemas import ClientOut, ClientCreate, ClienteConTercerosOut
+from models import Clientes, Terceros
+from schemas import ClientOut, ClientCreate, ClienteConTercerosOut, TerceroOut
 from typing import List, Optional
 
 
@@ -57,7 +57,14 @@ async def get_terceros():
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute("SELECT * FROM preguntas_formulario ORDER BY categoria;")
-            return {"preguntas": cursor.fetchall()}
+            preguntas_raw = cursor.fetchall()
+
+        preguntas_limpias = preparar_preguntas_formulario(preguntas_raw)
+        
+        ordenadas = ordenar_preguntas(preguntas_limpias)
+
+        return {"preguntas": ordenadas}
+
     finally:
         conn.close()
 
@@ -74,7 +81,14 @@ async def get_preguntas_por_categoria(categoria: str = Path(..., description="Ca
                 "SELECT * FROM preguntas_formulario WHERE categoria = %s;",
                 (categoria,)
             )
-            return {"preguntas": cursor.fetchall()}
+            preguntas_raw = cursor.fetchall()
+
+        preguntas_limpias = preparar_preguntas_formulario(preguntas_raw)
+        
+        ordenadas = ordenar_preguntas(preguntas_limpias)
+
+        return {"preguntas": ordenadas}
+        
     finally:
         conn.close()
 
@@ -270,9 +284,156 @@ def obtener_cliente_y_terceros(id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     return cliente
 
+@router.get("/clientes_terceros", response_model=List[ClienteConTercerosOut])
+def obtener_todos_los_clientes_con_terceros(db: Session = Depends(get_db)):
+    clientes = db.query(Clientes).all()
+    return clientes
 
+
+
+@router.get("/terceros/{cliente_id}", response_model=List[TerceroOut])
+def obtener_terceros(cliente_id: int, db: Session = Depends(get_db)):
+    query = db.query(Terceros).filter(Terceros.cliente_id == cliente_id).all()
+    if not query:
+        raise HTTPException(status_code=404, detail="No hay terceros para ese id")
+    return query
 
 
 app.include_router(router)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+###############################################################################################################3333
+#FUNCIONES
+#llevar a archivo func.py
+
+
+
+def preparar_preguntas_formulario(preguntas_raw):
+
+    preguntas_limpias = []
+        
+    for p in preguntas_raw:
+
+        categoria = p["categoria"].strip() if p["categoria"] else None
+        tipo_pregunta = p["tipo_pregunta"].strip() if p["tipo_pregunta"] else None
+        texto_pregunta = p["texto_pregunta"].strip() if p["texto_pregunta"] else None
+
+        # Buscar ID de pregunta relacionada
+        pregunta_relacionada_texto = p.get("pregunta_relacionada_texto")
+        if pregunta_relacionada_texto:
+            relacionada = next(
+                (pr for pr in preguntas_raw if pr["texto_pregunta"].strip() == pregunta_relacionada_texto.strip()),
+                None
+            )
+            id_relacionada = relacionada["id"] if relacionada else None
+        else:
+            id_relacionada = None
+
+        # Procesar opciones: dejar como lista o null
+        opciones = p.get("opciones")
+        if isinstance(opciones, str) and opciones.strip():
+            raw = opciones.strip()
+            if "," in raw:
+                opciones = [o.strip() for o in raw.split(",")]
+            elif "\n" in raw or "- " in raw:
+                opciones = [o.strip("- ").strip() for o in raw.splitlines() if o.strip()]
+            elif ":" in raw:
+                opciones = [o.strip(": ").strip() for o in raw.splitlines() if o.strip()]
+            else:
+                opciones = [raw]
+        else:
+            opciones = None
+
+        preguntas_limpias.append({
+            "id": p["id"],
+            "categoria": categoria,
+            "texto_pregunta": texto_pregunta,
+            "tipo_pregunta": tipo_pregunta,
+            "relacion": id_relacionada,
+            "opciones": opciones
+        })
+    
+    return preguntas_limpias
+
+
+
+
+
+
+
+
+def ordenar_preguntas(preguntas_limpias):
+    from collections import defaultdict
+
+    # 1. Definir orden deseado
+    orden_personalizado = [
+        "informacion_general_gobernanza",
+        "derechos_humanos",
+        "sostenibilidad_medio_ambiente",
+        "anticorrupcion"
+    ]
+
+    # 2. Agrupar por categoría
+    categorias = defaultdict(list)
+    preguntas_dict = {p["id"]: p for p in preguntas_limpias}
+
+    for p in preguntas_limpias:
+        categoria = p["categoria"]
+        categorias[categoria].append(p)
+
+    preguntas_ordenadas = []
+
+    # 3. Procesar en el orden deseado
+    for categoria in orden_personalizado:
+        if categoria not in categorias:
+            continue
+
+        preguntas = categorias[categoria]
+        preguntas.sort(key=lambda x: x["id"])
+        ya_agregados = set()
+        bloque_categoria = []
+
+        for p in preguntas:
+            if p["id"] in ya_agregados:
+                continue
+
+            # Si tiene una pregunta relacionada
+            if p["relacion"]:
+                relacionada = preguntas_dict.get(p["relacion"])
+                if relacionada and relacionada["id"] not in ya_agregados:
+                    bloque_categoria.append(relacionada)
+                    ya_agregados.add(relacionada["id"])
+
+            bloque_categoria.append(p)
+            ya_agregados.add(p["id"])
+
+        preguntas_ordenadas.extend(bloque_categoria)
+
+    return preguntas_ordenadas
+
+
+
 
 
