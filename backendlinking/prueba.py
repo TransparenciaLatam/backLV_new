@@ -13,7 +13,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session, joinedload
 
-from backendlinking.schemas import ClientCreate, ClientOut, ClienteConTercerosOut, FormularioCreate, FormularioGeneradoOutInfo, FormularioGeneradoOutPreguntas, GrupoPreguntasSchema
+from schemas import ClientCreate, ClientOut, ClienteConTercerosOut, FormularioCreate, FormularioGeneradoOutInfo, FormularioGeneradoOutPreguntas, GrupoPreguntasSchema
 from config import allow_origins
 
 from database.db import get_connection
