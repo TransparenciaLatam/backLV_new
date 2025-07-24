@@ -13,6 +13,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session, joinedload
 
+from backendlinking.schemas import ClientCreate, ClientOut, ClienteConTercerosOut, FormularioCreate, FormularioGeneradoOutInfo, FormularioGeneradoOutPreguntas, GrupoPreguntasSchema
 from config import allow_origins
 
 from database.db import get_connection
@@ -55,19 +56,11 @@ TIPOS_PERMITIDOS = {
 # Tamaño máximo permitido: 5 MB
 MAX_TAMANO_BYTES = 5 * 1024 * 1024
 
-
-
-
-
-
 ##Funciones --------------------------------------------------------------------------------------------------
 
-
-
 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
+
 #funcion para manejar las opciones y los detonantes
-
-
 def parsear_opciones_avanzado(cadena):
     def extraer_bloques(s):
         # Encuentra bloques correctamente balanceados
@@ -95,13 +88,10 @@ def parsear_opciones_avanzado(cadena):
     bloques = extraer_bloques(cadena)
     return [procesar_bloque(b) for b in bloques]
 
-
-
-
 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 #Esta funcion maneja las preguntas crudas de la base de datos y las rearma
 #para poder interpretarse en el frontend!
-
 def armarPregunta(preguntas):
 
     pregunta_dict = {}
@@ -192,9 +182,6 @@ def armarPregunta(preguntas):
 
     return pregunta_dict
 
-
-
-
 def ordenar_preguntas(preguntas: list[dict]) -> list[dict]:
     """
     Ordena una lista de preguntas por 'categoria' y luego por 'id'.
@@ -204,41 +191,9 @@ def ordenar_preguntas(preguntas: list[dict]) -> list[dict]:
     """
     return sorted(preguntas, key=lambda p: (p["categoria"], p["id"]))
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ##!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-## Funcion principal para trae preguntas
 
+## Funcion principal para trae preguntas
 @app.get("/preguntas_formulario")
 async def get_preguntas_activas(db: Session = Depends(get_db)):
     preguntas_raw = (
@@ -342,35 +297,7 @@ async def get_preguntas_por_categoria(db: Session = Depends(get_db)):
 # # Montar carpeta de archivos estáticos
 # app.mount("/archivos", StaticFiles(directory=UPLOAD_DIR), name="archivos")
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ##Funcion para traer clienntes por lista
-
 @router.get("/clientes", response_model=List[ClientOut])
 def obtener_clientes(nombre: Optional[str] = Query(None), db: Session = Depends(get_db)):
     query = db.query(Clientes)
@@ -400,8 +327,6 @@ def crear_cliente(cliente: ClientCreate, db: Session = Depends(get_db)):
     db.refresh(nuevo_cliente)
     return nuevo_cliente
 
-
-
 #funcion para traer tercero y su cliente
 @router.get("/clientes_terceros/{id}", response_model=ClienteConTercerosOut)
 def obtener_cliente_y_terceros(id: int, db: Session = Depends(get_db)):
@@ -416,8 +341,6 @@ def obtener_todos_los_clientes_con_terceros(db: Session = Depends(get_db)):
     clientes = db.query(Clientes).all()
     return clientes
 
-
-
 #funcion para traer terceros de un cliente por id
 @router.get("/terceros/{cliente_id}", response_model=List[TerceroOut])
 def obtener_terceros(cliente_id: int, db: Session = Depends(get_db)):
@@ -426,34 +349,25 @@ def obtener_terceros(cliente_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="No hay terceros para ese id")
     return query
 
-
-
 ##Funcion para traer terceros y su cliente referncia y formulario referido
-
 @router.get("/terceros", response_model=List[TerceroOut2])
 def obtener_terceros(db: Session = Depends(get_db)):
     terceros = db.query(Terceros).options(
         joinedload(Terceros.cliente),
         joinedload(Terceros.formulario_generado)
     ).all()
-
+    
     if not terceros:
         raise HTTPException(status_code=404, detail="No hay terceros registrados")
     return terceros
 
-
-
-
 ##Funciones para traer formularios para mostrar en dashboard..
-
 @router.get("/formularios", response_model=List[FormularioGeneradoOutInfo])
 def obtener_todos_los_formularios(db: Session = Depends(get_db)):
     formularios = db.query(FormularioGenerado).all()
     return formularios
 
-
-
-
+#Formulario
 @router.get("/formularios/{formulario_id}", response_model=FormularioGeneradoOutPreguntas)
 def obtener_formulario_por_id(formulario_id: int, db: Session = Depends(get_db)):
     formulario = db.query(FormularioGenerado).filter(FormularioGenerado.id == formulario_id).first()

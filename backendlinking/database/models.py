@@ -35,9 +35,6 @@ class Terceros(Base):
     formulario_generado = relationship("FormularioGenerado", back_populates="terceros")
 
 
-
-
-
 class PreguntaFormulario(Base):
     __tablename__ = "preguntas_formulario"
 
@@ -49,7 +46,6 @@ class PreguntaFormulario(Base):
     preguntas_relacionadas = Column(Text, default="")
     activa = Column(Boolean, default=True)
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
-
 
 class FormularioGenerado(Base):
     __tablename__ = "formularios_generados"

@@ -7,7 +7,6 @@ from fastapi.middleware.cors import CORSMiddleware
 # Carga las variables del archivo .env
 load_dotenv()
 
-
 DB_CONFIG = {
     "dbname": os.getenv("DB_NAME"),
     "user": os.getenv("DB_USER"),
@@ -21,9 +20,6 @@ SQLALCHEMY_DATABASE_URL = (
     f"postgresql://{DB_CONFIG['user']}:{DB_CONFIG['password']}@"
     f"{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['dbname']}"
 )
-
-
-
 
 # Obtener el valor de DEBUG
 DEBUG = bool(os.getenv('DEBUG'))
