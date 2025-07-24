@@ -4,6 +4,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 
 from config import DB_CONFIG, SQLALCHEMY_DATABASE_URL
 
+
 def get_connection():
     return psycopg2.connect(**DB_CONFIG)
 

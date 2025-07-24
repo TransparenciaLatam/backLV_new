@@ -14,7 +14,7 @@ from supabase import create_client, Client
 from psycopg2.extras import RealDictCursor
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from backendlinking.prueba import *
+from prueba import *
 
 # ==============================================================================
 # 1. APPLICATION SETUP & CONFIGURATION

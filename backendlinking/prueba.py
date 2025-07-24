@@ -1,164 +1,346 @@
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form, Query, APIRouter, Depends
-from fastapi import Path
+from fastapi import Path, Body
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.encoders import jsonable_encoder
+from collections import defaultdict
+
 from psycopg2.extras import RealDictCursor
-from db import get_connection
+
 from pydantic import BaseModel
 from typing import Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
-from db import get_db
-from models import Clientes, Terceros
-from schemas import ClientOut, ClientCreate, ClienteConTercerosOut, TerceroOut
+from config import allow_origins
+
+from database.db import get_connection
+from database.db import get_db
+from database.models import *
+from schemas import *
 from typing import List, Optional
+
+
+import re
+import shutil
+import uuid
+#import magic  # python-magic
+import os
 
 
 app = FastAPI(title="Linking Values API")
 
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
+    allow_origins=allow_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
 
+router = APIRouter()
 
-class PreguntaUpdate(BaseModel):
-    texto_pregunta: str
-    tipo_pregunta: str
-    pregunta_relacionada_texto: Optional[str] = None
+# # Carpeta de subida
+# UPLOAD_DIR = Path("archivos_subidos")
+# UPLOAD_DIR.mkdir(exist_ok=True)
 
+# Extensiones y MIME válidos
+TIPOS_PERMITIDOS = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".pdf": "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
 
-class PreguntaCreate(BaseModel):
-    categoria: str
-    texto_pregunta: str
-    tipo_pregunta: str
-    pregunta_relacionada_texto: Optional[str] = None
-
-
-class FormularioInput(BaseModel):
-    tercero_id: int
-    preguntas_ids: str  # Ej: "1,2,3" como texto plano
-
-class FormularioUpdate(BaseModel):
-    preguntas_ids: list[int]  # o str si estás guardando como string
+# Tamaño máximo permitido: 5 MB
+MAX_TAMANO_BYTES = 5 * 1024 * 1024
 
 
 
 
 
 
+##Funciones --------------------------------------------------------------------------------------------------
 
-#trae todas las preguntas
+
+
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
+#funcion para manejar las opciones y los detonantes
+
+
+def parsear_opciones_avanzado(cadena):
+    def extraer_bloques(s):
+        # Encuentra bloques correctamente balanceados
+        bloques = []
+        stack = []
+        inicio = None
+        for i, c in enumerate(s):
+            if c == '(':
+                if not stack:
+                    inicio = i
+                stack.append(c)
+            elif c == ')':
+                stack.pop()
+                if not stack and inicio is not None:
+                    bloques.append(s[inicio+1:i])  # sin paréntesis
+        return bloques
+
+    def procesar_bloque(bloque):
+        # Si tiene sub-bloques, es anidado
+        if '(' in bloque:
+            return [tuple(b.split(",")) for b in extraer_bloques(bloque)]
+        else:
+            return tuple(bloque.split(","))
+
+    bloques = extraer_bloques(cadena)
+    return [procesar_bloque(b) for b in bloques]
+
+
+
+
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+#Esta funcion maneja las preguntas crudas de la base de datos y las rearma
+#para poder interpretarse en el frontend!
+
+def armarPregunta(preguntas):
+
+    pregunta_dict = {}
+    pregunta_dict["id"] = preguntas["id"]
+    pregunta_dict["categoria"] = preguntas["categoria"]
+    pregunta_dict["preguntas"] = []
+    index = 1
+    
+    lista_preguntas = {
+
+        "index" : index,
+        "texto_pregunta": preguntas["texto_pregunta"],
+        "tipo_pregunta": preguntas["tipo_pregunta"]
+
+    }
+
+    if preguntas["opciones"]:
+
+        opciones = parsear_opciones_avanzado(preguntas["opciones"]) 
+
+        lista_preguntas["opciones"] = opciones[0]
+        pregunta_dict["preguntas"].append(lista_preguntas)
+     
+
+        if preguntas["preguntas_relacionadas"]:
+
+            preguntas_relacionadas = parsear_opciones_avanzado(preguntas["preguntas_relacionadas"])
+        
+            contador_opciones = 1 
+            detonador_index_1 = 0
+            detonador_index_2 = 0
+            vueltas = 0
+            
+            for preg in preguntas_relacionadas: 
+
+                dictt = {}
+                detonador = opciones[detonador_index_1][detonador_index_2]
+                index +=1 
+
+                if any(preg):
+
+                    if isinstance(preg, list):
+
+                        for pr in preg:
+                        
+                            dictt = {
+                                "index" : index,
+                                "detonador" : detonador,
+                                "texto_pregunta" : pr[0],
+                                "tipo_pregunta" : pr[1]                                   
+                            }
+                            pregunta_dict["preguntas"].append(dictt)
+                    else:
+
+                        dictt = {
+                                "index" : index,
+                                "detonador" : detonador,
+                                "texto_pregunta" : preg[0],
+                                "tipo_pregunta" : preg[1]                                   
+                            }
+                        
+                        if contador_opciones < len(opciones) and opciones[contador_opciones]:
+
+                            dictt["opciones"] = opciones[contador_opciones]
+                            contador_opciones += 1
+                        
+                        pregunta_dict["preguntas"].append(dictt)
+
+                else:
+
+                    dictt = {
+                                "index" : index 
+                                  
+                            }
+
+                    pregunta_dict["preguntas"].append(dictt)
+                
+                vueltas += 1
+                detonador_index_2 += 1 
+               
+                if vueltas == 2:
+                    vueltas = 0
+                    detonador_index_1 +=1
+                    detonador_index_2 = 0                       
+                            
+    else:
+        pregunta_dict["preguntas"].append(lista_preguntas)
+
+    return pregunta_dict
+
+
+
+
+def ordenar_preguntas(preguntas: list[dict]) -> list[dict]:
+    """
+    Ordena una lista de preguntas por 'categoria' y luego por 'id'.
+    
+    :param preguntas: Lista de diccionarios con preguntas.
+    :return: Lista ordenada.
+    """
+    return sorted(preguntas, key=lambda p: (p["categoria"], p["id"]))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+##!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+## Funcion principal para trae preguntas
 
 @app.get("/preguntas_formulario")
-async def get_terceros():
-    conn = get_connection()
-    try:
-        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute("SELECT * FROM preguntas_formulario ORDER BY categoria;")
-            preguntas_raw = cursor.fetchall()
+async def get_preguntas_activas(db: Session = Depends(get_db)):
+    preguntas_raw = (
+        db.query(PreguntaFormulario)
+        .filter(PreguntaFormulario.activa == True)
+        .order_by(PreguntaFormulario.categoria)
+        .all()
+    )
 
-        preguntas_limpias = preparar_preguntas_formulario(preguntas_raw)
-        
-        ordenadas = ordenar_preguntas(preguntas_limpias)
+    preguntas_dicts = [p.__dict__ for p in preguntas_raw]
+    for p in preguntas_dicts:
+        p.pop("_sa_instance_state", None)
 
-        return {"preguntas": ordenadas}
-
-    finally:
-        conn.close()
-
-
-
-
-# filtra por categoria
-@app.get("/preguntas_formulario/categoria/{categoria}")
-async def get_preguntas_por_categoria(categoria: str = Path(..., description="Categoría de las preguntas")):
-    conn = get_connection()
-    try:
-        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute(
-                "SELECT * FROM preguntas_formulario WHERE categoria = %s;",
-                (categoria,)
-            )
-            preguntas_raw = cursor.fetchall()
-
-        preguntas_limpias = preparar_preguntas_formulario(preguntas_raw)
-        
-        ordenadas = ordenar_preguntas(preguntas_limpias)
-
-        return {"preguntas": ordenadas}
-        
-    finally:
-        conn.close()
-
-
-#filtra por id
-@app.get("/preguntas_formulario/id/{id}")
-async def get_pregunta_por_id(id: int = Path(..., description="ID de la pregunta")):
-    conn = get_connection()
-    try:
-        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute(
-                "SELECT * FROM preguntas_formulario WHERE id = %s;",
-                (id,)
-            )
-            pregunta = cursor.fetchone()
-            if pregunta is None:
-                raise HTTPException(status_code=404, detail="Pregunta no encontrada")
-            return {"pregunta": pregunta}
-    finally:
-        conn.close()
-
-
-#actualiza pregunta por id
-@app.put("/preguntas_formulario/{id}")
-async def actualizar_pregunta(id: int, pregunta: PreguntaUpdate):
-    conn = get_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                """
-                UPDATE preguntas_formulario
-                SET texto_pregunta = %s,
-                    tipo_pregunta = %s,
-                    pregunta_relacionada_texto = %s
-                WHERE id = %s;
-                """,
-                (pregunta.texto_pregunta, pregunta.tipo_pregunta, pregunta.pregunta_relacionada_texto, id)
-            )
-            if cursor.rowcount == 0:
-                raise HTTPException(status_code=404, detail="No se encontró una pregunta con ese id.")
-            conn.commit()
-            return {"message": "Pregunta actualizada correctamente"}
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=f"Error al actualizar: {str(e)}")
-    finally:
-        conn.close()
+    preguntas_ordenadas = ordenar_preguntas(preguntas_dicts)
+    lista_preguntas = []
+    for i in preguntas_ordenadas:
+        aux = armarPregunta(i)
+        lista_preguntas.append(aux)
+    return {"preguntas": lista_preguntas}
 
 
 
-#guarda pregunta nueva
-@app.post("/preguntas_formulario/")
-async def crear_pregunta(pregunta: PreguntaCreate):
-    conn = get_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                """
-                INSERT INTO preguntas_formulario (categoria, texto_pregunta, tipo_pregunta, pregunta_relacionada_texto)
-                VALUES (%s, %s, %s, %s);
-                """,
-                (pregunta.categoria, pregunta.texto_pregunta, pregunta.tipo_pregunta, pregunta.pregunta_relacionada_texto)
-            )
-            conn.commit()
-            return {"message": "Pregunta creada correctamente"}
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=f"Error al crear la pregunta: {str(e)}")
-    finally:
-        conn.close()
+
+##Funcion para traer preguntas por categoria!!!
+
+@app.get("/preguntas_por_categoria")
+async def get_preguntas_por_categoria(db: Session = Depends(get_db)):
+    preguntas_raw = (
+        db.query(PreguntaFormulario)
+        .filter(PreguntaFormulario.activa == True)
+        .order_by(PreguntaFormulario.categoria)
+        .all()
+    )
+
+    preguntas_dicts = [p.__dict__ for p in preguntas_raw]
+    for p in preguntas_dicts:
+        p.pop("_sa_instance_state", None)
+
+    preguntas_ordenadas = ordenar_preguntas(preguntas_dicts)
+
+    categorias_dict = defaultdict(list)
+    for pregunta in preguntas_ordenadas:
+        categoria = pregunta.get("categoria", "Sin categoría")
+        categorias_dict[categoria].append(armarPregunta(pregunta))
+
+    resultado = [{"categoria": cat, "preguntas": preguntas} for cat, preguntas in categorias_dict.items()]
+    
+    return resultado
+
+
+
+
+
+
+##!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!111
+## Funcion para analizar carga de archivos
+
+
+
+
+
+# @app.post("/subir-archivo")
+# async def subir_archivo(archivo: UploadFile = File(...)):
+#     extension = Path(archivo.filename).suffix.lower()
+#     content_type = archivo.content_type
+
+#     # Verificar extensión permitida
+#     if extension not in TIPOS_PERMITIDOS:
+#         raise HTTPException(status_code=400, detail="Extensión de archivo no permitida")
+
+#     # Verificar MIME type declarado
+#     if TIPOS_PERMITIDOS[extension] != content_type:
+#         raise HTTPException(status_code=400, detail="Tipo MIME no coincide con la extensión")
+
+#     # Leer bytes y validar tamaño
+#     contenido = await archivo.read()
+#     if len(contenido) > MAX_TAMANO_BYTES:
+#         raise HTTPException(status_code=413, detail="Archivo demasiado grande")
+
+#     # Verificar contenido real usando python-magic
+#     tipo_real = magic.from_buffer(contenido, mime=True)
+#     if tipo_real != content_type:
+#         raise HTTPException(status_code=400, detail="El contenido del archivo es sospechoso")
+
+#     # Volver al inicio del stream
+#     archivo.file.seek(0)
+
+#     # Guardar con nombre aleatorio
+#     nuevo_nombre = f"{uuid.uuid4().hex}{extension}"
+#     destino = UPLOAD_DIR / nuevo_nombre
+
+#     with destino.open("wb") as f:
+#         shutil.copyfileobj(archivo.file, f)
+
+#     # URL pública para recuperar el archivo
+#     url_publica = f"http://localhost:8000/archivos/{nuevo_nombre}"
+
+#     return {"url": url_publica}
+
+
+# # Montar carpeta de archivos estáticos
+# app.mount("/archivos", StaticFiles(directory=UPLOAD_DIR), name="archivos")
 
 
 
@@ -174,68 +356,6 @@ async def crear_pregunta(pregunta: PreguntaCreate):
 
 
 
-#agregar un formulario nuevo a un tercero
-@app.post("/formulario_tercero")
-async def crear_formulario(formulario: FormularioInput):
-    conn = get_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                "INSERT INTO formulario_por_terceros (tercero_id, preguntas_ids) VALUES (%s, %s);",
-                (formulario.tercero_id, formulario.preguntas_ids)
-            )
-            conn.commit()
-            return {"message": "Formulario guardado exitosamente"}
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=f"Error al guardar: {str(e)}")
-    finally:
-        conn.close()
-
-
-
-#obtener un formulario de un tercero
-@app.get("/formulario_tercero/{id_tercero}")
-async def obtener_formulario(id_tercero: int):
-    conn = get_connection()
-    try:
-        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute(
-                "SELECT * FROM formulario_por_terceros WHERE tercero_id = %s;",
-                (id_tercero,)
-            )
-            resultados = cursor.fetchall()
-            if not resultados:
-                raise HTTPException(status_code=404, detail="Formulario no encontrado para ese tercero.")
-            return {"formularios": resultados}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al obtener: {str(e)}")
-    finally:
-        conn.close()
-
-
-
-
-
-#editar un formulario de un tercero
-@app.put("/formulario_tercero/{id_tercero}")
-async def actualizar_formulario(id_tercero: int, formulario: FormularioUpdate):
-    conn = get_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                "UPDATE formulario_por_terceros SET preguntas_ids = %s WHERE tercero_id = %s;",
-                (formulario.preguntas_ids, id_tercero)
-            )
-            if cursor.rowcount == 0:
-                raise HTTPException(status_code=404, detail="No se encontró un formulario con ese id_tercero.")
-            conn.commit()
-            return {"message": "Formulario actualizado correctamente"}
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=f"Error al actualizar: {str(e)}")
-    finally:
-        conn.close()
 
 
 
@@ -245,7 +365,11 @@ async def actualizar_formulario(id_tercero: int, formulario: FormularioUpdate):
 
 
 
-router = APIRouter()
+
+
+
+
+##Funcion para traer clienntes por lista
 
 @router.get("/clientes", response_model=List[ClientOut])
 def obtener_clientes(nombre: Optional[str] = Query(None), db: Session = Depends(get_db)):
@@ -255,6 +379,7 @@ def obtener_clientes(nombre: Optional[str] = Query(None), db: Session = Depends(
     return query.all()
 
 
+#funcion para traer clientes por id
 @router.get("/clientes/{id}", response_model=ClientOut)
 def obtener_cliente_por_id(id: int, db: Session = Depends(get_db)):
     cliente = db.query(Clientes).filter(Clientes.id == id).first()
@@ -263,6 +388,7 @@ def obtener_cliente_por_id(id: int, db: Session = Depends(get_db)):
     return cliente
 
 
+#funcion para crear un nuevo cliente
 @router.post("/clientes", response_model=ClientOut, status_code=201)
 def crear_cliente(cliente: ClientCreate, db: Session = Depends(get_db)):
     nuevo_cliente = Clientes(
@@ -276,7 +402,7 @@ def crear_cliente(cliente: ClientCreate, db: Session = Depends(get_db)):
 
 
 
-
+#funcion para traer tercero y su cliente
 @router.get("/clientes_terceros/{id}", response_model=ClienteConTercerosOut)
 def obtener_cliente_y_terceros(id: int, db: Session = Depends(get_db)):
     cliente = db.query(Clientes).filter(Clientes.id == id).first()
@@ -284,6 +410,7 @@ def obtener_cliente_y_terceros(id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     return cliente
 
+#funcion para traer todos los clientes y sus terceros
 @router.get("/clientes_terceros", response_model=List[ClienteConTercerosOut])
 def obtener_todos_los_clientes_con_terceros(db: Session = Depends(get_db)):
     clientes = db.query(Clientes).all()
@@ -291,12 +418,148 @@ def obtener_todos_los_clientes_con_terceros(db: Session = Depends(get_db)):
 
 
 
+#funcion para traer terceros de un cliente por id
 @router.get("/terceros/{cliente_id}", response_model=List[TerceroOut])
 def obtener_terceros(cliente_id: int, db: Session = Depends(get_db)):
     query = db.query(Terceros).filter(Terceros.cliente_id == cliente_id).all()
     if not query:
         raise HTTPException(status_code=404, detail="No hay terceros para ese id")
     return query
+
+
+
+##Funcion para traer terceros y su cliente referncia y formulario referido
+
+@router.get("/terceros", response_model=List[TerceroOut2])
+def obtener_terceros(db: Session = Depends(get_db)):
+    terceros = db.query(Terceros).options(
+        joinedload(Terceros.cliente),
+        joinedload(Terceros.formulario_generado)
+    ).all()
+
+    if not terceros:
+        raise HTTPException(status_code=404, detail="No hay terceros registrados")
+    return terceros
+
+
+
+
+##Funciones para traer formularios para mostrar en dashboard..
+
+@router.get("/formularios", response_model=List[FormularioGeneradoOutInfo])
+def obtener_todos_los_formularios(db: Session = Depends(get_db)):
+    formularios = db.query(FormularioGenerado).all()
+    return formularios
+
+
+
+
+@router.get("/formularios/{formulario_id}", response_model=FormularioGeneradoOutPreguntas)
+def obtener_formulario_por_id(formulario_id: int, db: Session = Depends(get_db)):
+    formulario = db.query(FormularioGenerado).filter(FormularioGenerado.id == formulario_id).first()
+
+    if not formulario:
+        raise HTTPException(status_code=404, detail="Formulario no encontrado")
+
+    # Convertir string de ids en lista de enteros
+    try:
+        preguntas_ids = [int(pid.strip()) for pid in formulario.preguntas_ids.split(",") if pid.strip()]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Error al parsear preguntas_ids")
+
+    preguntas = db.query(PreguntaFormulario).filter(PreguntaFormulario.id.in_(preguntas_ids)).all()
+
+    preguntas_dicts = [p.__dict__ for p in preguntas]
+    for p in preguntas_dicts:
+        p.pop("_sa_instance_state", None)
+
+    preguntas_ordenadas = ordenar_preguntas(preguntas_dicts)
+    lista_preguntas = []
+    for i in preguntas_ordenadas:
+        aux = armarPregunta(i)
+        lista_preguntas.append(aux)
+
+
+    return {
+        "id": formulario.id,
+        "nombre_formulario": formulario.nombre_formulario,
+        "fecha_creacion": formulario.fecha_creacion,
+        "preguntas": lista_preguntas
+    }
+
+
+
+class IdsRequest(BaseModel):
+    ids: List[int]
+
+@router.post("/formularios", response_model=List[GrupoPreguntasSchema])
+def obtener_preguntas_por_ids_directo(
+    ids: List[int] = Body(...),
+    db: Session = Depends(get_db)
+):
+    preguntas = db.query(PreguntaFormulario).filter(PreguntaFormulario.id.in_(ids)).all()
+
+    if not preguntas:
+        raise HTTPException(status_code=404, detail="No se encontraron preguntas con los IDs proporcionados")
+
+    preguntas_dicts = [p.__dict__ for p in preguntas]
+    for p in preguntas_dicts:
+        p.pop("_sa_instance_state", None)
+
+    preguntas_ordenadas = ordenar_preguntas(preguntas_dicts)
+    lista_preguntas = []
+    for i in preguntas_ordenadas:
+        aux = armarPregunta(i)
+        lista_preguntas.append(aux)
+
+    return lista_preguntas
+
+
+
+
+
+def crear_formulario(db: Session, datos: FormularioCreate):
+    preguntas_ids_str = ",".join(str(id) for id in datos.preguntas_ids)
+
+    nuevo_formulario = FormularioGenerado(
+        nombre_formulario=datos.nombre_formulario,
+        preguntas_ids=preguntas_ids_str
+    )
+
+    db.add(nuevo_formulario)
+    db.commit()
+    db.refresh(nuevo_formulario)
+
+    return nuevo_formulario
+
+@router.post("/guardar_formulario")
+def guardar_formulario(formulario: FormularioCreate, db: Session = Depends(get_db)):
+    return crear_formulario(db, formulario)
+
+
+
+
+
+
+
+
+
+##Funcion para conseguir estadisticas
+
+@app.get("/estadisticas")
+def get_estadisticas(db: Session = Depends(get_db)):
+    total_empresas = db.query(Clientes).count()
+    total_proveedores = db.query(Terceros).count()
+    total_formularios = db.query(FormularioGenerado).count()
+    return {
+        "empresas": total_empresas,
+        "proveedores": total_proveedores,
+        "formularios" : total_formularios
+    }
+
+
+
+
 
 
 app.include_router(router)
@@ -324,114 +587,6 @@ app.include_router(router)
 
 
 
-###############################################################################################################3333
-#FUNCIONES
-#llevar a archivo func.py
-
-
-
-def preparar_preguntas_formulario(preguntas_raw):
-
-    preguntas_limpias = []
-        
-    for p in preguntas_raw:
-
-        categoria = p["categoria"].strip() if p["categoria"] else None
-        tipo_pregunta = p["tipo_pregunta"].strip() if p["tipo_pregunta"] else None
-        texto_pregunta = p["texto_pregunta"].strip() if p["texto_pregunta"] else None
-
-        # Buscar ID de pregunta relacionada
-        pregunta_relacionada_texto = p.get("pregunta_relacionada_texto")
-        if pregunta_relacionada_texto:
-            relacionada = next(
-                (pr for pr in preguntas_raw if pr["texto_pregunta"].strip() == pregunta_relacionada_texto.strip()),
-                None
-            )
-            id_relacionada = relacionada["id"] if relacionada else None
-        else:
-            id_relacionada = None
-
-        # Procesar opciones: dejar como lista o null
-        opciones = p.get("opciones")
-        if isinstance(opciones, str) and opciones.strip():
-            raw = opciones.strip()
-            if "," in raw:
-                opciones = [o.strip() for o in raw.split(",")]
-            elif "\n" in raw or "- " in raw:
-                opciones = [o.strip("- ").strip() for o in raw.splitlines() if o.strip()]
-            elif ":" in raw:
-                opciones = [o.strip(": ").strip() for o in raw.splitlines() if o.strip()]
-            else:
-                opciones = [raw]
-        else:
-            opciones = None
-
-        preguntas_limpias.append({
-            "id": p["id"],
-            "categoria": categoria,
-            "texto_pregunta": texto_pregunta,
-            "tipo_pregunta": tipo_pregunta,
-            "relacion": id_relacionada,
-            "opciones": opciones
-        })
-    
-    return preguntas_limpias
-
-
-
-
-
-
-
-
-def ordenar_preguntas(preguntas_limpias):
-    from collections import defaultdict
-
-    # 1. Definir orden deseado
-    orden_personalizado = [
-        "informacion_general_gobernanza",
-        "derechos_humanos",
-        "sostenibilidad_medio_ambiente",
-        "anticorrupcion"
-    ]
-
-    # 2. Agrupar por categoría
-    categorias = defaultdict(list)
-    preguntas_dict = {p["id"]: p for p in preguntas_limpias}
-
-    for p in preguntas_limpias:
-        categoria = p["categoria"]
-        categorias[categoria].append(p)
-
-    preguntas_ordenadas = []
-
-    # 3. Procesar en el orden deseado
-    for categoria in orden_personalizado:
-        if categoria not in categorias:
-            continue
-
-        preguntas = categorias[categoria]
-        preguntas.sort(key=lambda x: x["id"])
-        ya_agregados = set()
-        bloque_categoria = []
-
-        for p in preguntas:
-            if p["id"] in ya_agregados:
-                continue
-
-            # Si tiene una pregunta relacionada
-            if p["relacion"]:
-                relacionada = preguntas_dict.get(p["relacion"])
-                if relacionada and relacionada["id"] not in ya_agregados:
-                    bloque_categoria.append(relacionada)
-                    ya_agregados.add(relacionada["id"])
-
-            bloque_categoria.append(p)
-            ya_agregados.add(p["id"])
-
-        preguntas_ordenadas.extend(bloque_categoria)
-
-    return preguntas_ordenadas
 
 
 
