@@ -139,6 +139,19 @@ class PreguntaFormularioOut(BaseModel):
 
     class Config:
         orm_mode = True
+        
+class PreguntaFormularioSchema(BaseModel):
+    id: int
+    categoria: str
+    texto_pregunta: str
+    tipo_pregunta: str
+    opciones: Optional[str] = ""
+    preguntas_relacionadas: Optional[str] = ""
+    activa: bool
+    fecha_creacion: datetime
+
+    class Config:
+        orm_mode = True
 
 
 

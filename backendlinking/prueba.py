@@ -431,6 +431,56 @@ def obtener_preguntas_por_ids_directo(
 
 
 
+##Esta funcion rrecibe un id de formulario y filtra por categorias
+
+@router.get(
+    "/formularios/{formulario_id}/categoria/{categoria}",
+    response_model=List[GrupoPreguntasSchema],
+    summary="Obtiene preguntas activas de un formulario por categoría"
+)
+def obtener_preguntas_por_categoria(
+    formulario_id: int,
+    categoria: str,
+    db: Session = Depends(get_db)
+):
+    formulario = db.query(FormularioGenerado).filter(FormularioGenerado.id == formulario_id).first()
+    if not formulario:
+        raise HTTPException(status_code=404, detail="Formulario no encontrado")
+
+    try:
+        preguntas_ids = list(map(int, formulario.preguntas_ids.split(',')))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Formato inválido en preguntas_ids")
+
+    preguntas = (
+        db.query(PreguntaFormulario)
+        .filter(
+            PreguntaFormulario.id.in_(preguntas_ids),
+            PreguntaFormulario.categoria == categoria,
+            PreguntaFormulario.activa == True
+        )
+        .all()
+    )
+
+    preguntas_dicts = [p.__dict__ for p in preguntas]
+    for p in preguntas_dicts:
+        p.pop("_sa_instance_state", None)
+
+    preguntas_ordenadas = ordenar_preguntas(preguntas_dicts)
+    lista_preguntas = []
+    for i in preguntas_ordenadas:
+        aux = armarPregunta(i)
+        lista_preguntas.append(aux)
+
+    return lista_preguntas
+
+
+
+
+
+
+
+
 
 def crear_formulario(db: Session, datos: FormularioCreate):
     preguntas_ids_str = ",".join(str(id) for id in datos.preguntas_ids)
@@ -470,6 +520,82 @@ def get_estadisticas(db: Session = Depends(get_db)):
         "proveedores": total_proveedores,
         "formularios" : total_formularios
     }
+
+
+
+
+
+
+
+##Peticion para el inicio de tercero
+##ESta funcion trae informacion de tercero, de su cliente y formulario. y ademas las categorias que posee en su formulario
+
+
+@router.get("/tercero_info/{id_tercero}")
+def obtener_info_tercero(id_tercero: int, db: Session = Depends(get_db)):
+    # Obtener el tercero + cliente relacionado
+    tercero = db.query(Terceros).filter(Terceros.id_tercero == id_tercero).first()
+    if not tercero:
+        raise HTTPException(status_code=404, detail="Tercero no encontrado")
+
+    cliente = tercero.cliente
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+
+    formulario = db.query(FormularioGenerado).filter(FormularioGenerado.id == tercero.formularios).first()
+    if not formulario:
+        raise HTTPException(status_code=404, detail="Formulario no encontrado")
+
+    # Obtener categorías de las preguntas del formulario
+    try:
+        preguntas_ids = [int(pid) for pid in formulario.preguntas_ids.split(',') if pid.strip().isdigit()]
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error al procesar preguntas_ids: {str(e)}")
+
+    preguntas = db.query(PreguntaFormulario).filter(PreguntaFormulario.id.in_(preguntas_ids)).all()
+
+    # Agrupar por categorías únicas
+    categorias = list(set([preg.categoria for preg in preguntas if preg.categoria]))
+
+    # Armar la respuesta
+    return {
+        "tercero": {
+            "nombre": tercero.nombre_tercero,
+            "email": tercero.email,
+            "cliente_id": tercero.cliente_id,
+            "formulario_id": tercero.formularios
+        },
+        "cliente": {
+            "nombre": cliente.nombre_cliente,
+            "email": cliente.email_contacto
+        },
+        "categorias": categorias
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
