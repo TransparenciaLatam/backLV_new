@@ -9,6 +9,15 @@ class IndicesRequest(BaseModel):
     indices: List[int]
 
 
+#Esquema para agregar preguntas
+class PreguntaFormularioBase(BaseModel):
+    categoria: str
+    texto_pregunta: str
+    tipo_pregunta: str
+    opciones: Optional[str] = None
+    preguntas_relacionadas: Optional[str] = None
+
+
 
 #primer esquema, para traer clientes con sus terceros
 
