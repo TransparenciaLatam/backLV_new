@@ -16,6 +16,46 @@ class PreguntaFormularioBase(BaseModel):
     opciones: Optional[str] = None
     preguntas_relacionadas: Optional[str] = None
 
+
+
+
+
+##Esquema para asignar formulario a un tercero
+class AsignacionFormulario(BaseModel):
+    id_tercero: int
+    formulario_id: int
+
+
+
+
+##Esquema para traer terceros, por id cliente y ademas sus formularios
+
+class FormularioGeneradoSchema(BaseModel):
+    id: int
+    nombre_formulario: str
+
+    class Config:
+        orm_mode = True
+
+class TerceroSchema(BaseModel):
+    id_tercero: int
+    nombre_tercero: str
+    email: str
+    fecha_registro: datetime
+    formulario_generado: Optional[FormularioGeneradoSchema] = None
+
+    class Config:
+        orm_mode = True
+
+
+
+#Esquema para agregar preguntas
+class PreguntaFormularioBase(BaseModel):
+    categoria: str
+    texto_pregunta: str
+    tipo_pregunta: str
+    opciones: Optional[str] = None
+    preguntas_relacionadas: Optional[str] = None
     
 <<<<<<< HEAD
 ##Esquema para asignar formulario a un tercero
