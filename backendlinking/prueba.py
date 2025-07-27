@@ -214,6 +214,21 @@ async def get_preguntas_activas(db: Session = Depends(get_db)):
         lista_preguntas.append(aux)
     return {"preguntas": lista_preguntas}
 
+##arreglando formulario para agregar preguntas
+@app.post("/nueva_pregunta")
+def crear_pregunta(pregunta: PreguntaFormularioBase, db: Session = Depends(get_db)):
+    nueva = PreguntaFormulario(
+        categoria=pregunta.categoria,
+        texto_pregunta=pregunta.texto_pregunta,
+        tipo_pregunta=pregunta.tipo_pregunta,
+        opciones=pregunta.opciones,
+        preguntas_relacionadas=pregunta.preguntas_relacionadas,
+        activa=True
+    )
+    db.add(nueva)
+    db.commit()
+    db.refresh(nueva)
+    return {"id": nueva.id, "mensaje": "Pregunta creada con éxito"}
 
 
 
