@@ -25,7 +25,7 @@ class Terceros(Base):
     id_tercero = Column(Integer, primary_key=True)
     nombre_tercero = Column(String)
     email = Column(String)
-    fecha_registro = Column(DateTime)
+    fecha_registro = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     
     cliente_id = Column(Integer, ForeignKey("clientes.id"))
     formularios = Column(Integer, ForeignKey("formularios_generados.id"))

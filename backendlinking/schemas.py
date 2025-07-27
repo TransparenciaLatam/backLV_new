@@ -9,6 +9,37 @@ class IndicesRequest(BaseModel):
     indices: List[int]
 
 
+##Esquema para asignar formulario a un tercero
+class AsignacionFormulario(BaseModel):
+    id_tercero: int
+    formulario_id: int
+
+
+
+
+##Esquema para traer terceros, por id cliente y ademas sus formularios
+
+class FormularioGeneradoSchema(BaseModel):
+    id: int
+    nombre_formulario: str
+
+    class Config:
+        orm_mode = True
+
+class TerceroSchema(BaseModel):
+    id_tercero: int
+    nombre_tercero: str
+    email: str
+    fecha_registro: datetime
+    formulario_generado: Optional[FormularioGeneradoSchema] = None
+
+    class Config:
+        orm_mode = True
+
+
+
+
+
 
 #primer esquema, para traer clientes con sus terceros
 
@@ -49,6 +80,15 @@ class ClientOut(BaseModel):
 class ClientCreate(BaseModel):
     nombre_cliente: str
     email_contacto: EmailStr
+
+
+#Esquema para crear terceros
+
+class TerceroCreate(BaseModel):
+    nombre_tercero: str
+    email: EmailStr
+    cliente_id: int
+
 
 
 ##esquema para traer terceros junto con su cliente y formulario asignado

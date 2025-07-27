@@ -361,6 +361,29 @@ def obtener_terceros(db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="No hay terceros registrados")
     return terceros
 
+
+##Funcion para guardar tercero
+
+@router.post("/terceros/")
+def crear_tercero(tercero: TerceroCreate, db: Session = Depends(get_db)):
+    nuevo_tercero = Terceros(
+        nombre_tercero=tercero.nombre_tercero,
+        email=tercero.email,
+        cliente_id=tercero.cliente_id,
+        fecha_registro=None,        # opcional, podés también usar datetime.utcnow() si querés registrarlo ahora
+        formularios=None
+    )
+
+    db.add(nuevo_tercero)
+    db.commit()
+    db.refresh(nuevo_tercero)
+
+    return {
+        "cliente_id": nuevo_tercero.id_tercero,
+        "nombre_tercero": nuevo_tercero.nombre_tercero,
+        "email": nuevo_tercero.email
+    }
+
 ##Funciones para traer formularios para mostrar en dashboard..
 @router.get("/formularios", response_model=List[FormularioGeneradoOutInfo])
 def obtener_todos_los_formularios(db: Session = Depends(get_db)):
@@ -576,12 +599,34 @@ def obtener_info_tercero(id_tercero: int, db: Session = Depends(get_db)):
 
 
 
+##Funcion para traer terceros por id y ademas sus formularios correspondientes
 
 
+@router.get("/clientes/{cliente_id}/terceros", response_model=List[TerceroSchema])
+def obtener_terceros_por_cliente(cliente_id: int, db: Session = Depends(get_db)):
+    cliente = db.query(Clientes).filter(Clientes.id == cliente_id).first()
+    
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+
+    return cliente.terceros
 
 
+##Funcion para asignar formularios
+@router.post("/asignar_formulario")
+def asignar_formulario_a_tercero(
+    datos: AsignacionFormulario,
+    db: Session = Depends(get_db)
+):
+    tercero = db.query(Terceros).filter(Terceros.id_tercero == datos.id_tercero).first()
 
+    if not tercero:
+        raise HTTPException(status_code=404, detail="Tercero no encontrado")
 
+    tercero.formularios = datos.formulario_id
+    db.commit()
+
+    return {"mensaje": "ok!"}
 
 
 
