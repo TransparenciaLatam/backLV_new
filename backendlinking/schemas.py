@@ -57,7 +57,6 @@ class PreguntaFormularioBase(BaseModel):
     opciones: Optional[str] = None
     preguntas_relacionadas: Optional[str] = None
     
-<<<<<<< HEAD
 ##Esquema para asignar formulario a un tercero
 class AsignacionFormulario(BaseModel):
     id_tercero: int
@@ -87,15 +86,6 @@ class TerceroSchema(BaseModel):
 
 
 
-=======
-#Esquema para agregar preguntas
-class PreguntaFormularioBase(BaseModel):
-    categoria: str
-    texto_pregunta: str
-    tipo_pregunta: str
-    opciones: Optional[str] = None
-    preguntas_relacionadas: Optional[str] = None
->>>>>>> 05c35a72dfbd50b8fe45c9fd85dce06d1dade49b
 
 
 
