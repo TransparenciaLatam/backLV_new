@@ -27,8 +27,9 @@ from typing import List, Optional
 import re
 import shutil
 import uuid
-#import magic  # python-magic
+import magic  # python-magic
 import os
+import httpx
 
 
 app = FastAPI(title="Linking Values API")
@@ -42,7 +43,7 @@ router = APIRouter()
 
 
 #pip install httpx
-# import httpx
+
 
 # # Tu clave secreta de reCAPTCHA v3
 # RECAPTCHA_SECRET_KEY = "6Lc2kJQrAAAAABbFc_9ximQMb0f6RCcnD0ny9jaE"
@@ -84,18 +85,6 @@ router = APIRouter()
 # UPLOAD_DIR = Path("archivos_subidos")
 # UPLOAD_DIR.mkdir(exist_ok=True)
 
-# Extensiones y MIME válidos
-TIPOS_PERMITIDOS = {
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".png": "image/png",
-    ".pdf": "application/pdf",
-    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-}
-
-# Tamaño máximo permitido: 5 MB
-MAX_TAMANO_BYTES = 5 * 1024 * 1024
 
 ##Funciones --------------------------------------------------------------------------------------------------
 
@@ -309,7 +298,6 @@ async def get_preguntas_por_categoria(db: Session = Depends(get_db)):
 
 
 
-
 TIPOS_PERMITIDOS = {
     "image/jpeg",
     "image/png",
@@ -318,18 +306,45 @@ TIPOS_PERMITIDOS = {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",        # .xlsx
 }
 
+EXTENSIONES_PERMITIDAS = {".jpg", ".jpeg", ".png", ".pdf", ".docx", ".xlsx"}
+
 @router.post("/validar-archivo")
 async def validar_archivo(archivo: UploadFile = File(...)):
-    if archivo.content_type not in TIPOS_PERMITIDOS:
-        return JSONResponse(status_code=400, content={"aprobado": False, "detalle": "Tipo de archivo no permitido"})
-
+    # Leer contenido
     contenido = await archivo.read()
 
+    # Validar tamaño (máx. 10MB)
     if len(contenido) > 10 * 1024 * 1024:
-        return JSONResponse(status_code=400, content={"aprobado": False, "detalle": "El archivo excede el tamaño máximo permitido"})
+        return JSONResponse(
+            status_code=400,
+            content={"aprobado": False, "detalle": "El archivo excede el tamaño máximo permitido (10MB)"}
+        )
 
-    # Aquí podrías aplicar más validaciones (como antivirus, etc)
+    # Validar extensión
+    extension = os.path.splitext(archivo.filename)[1].lower()
+    if extension not in EXTENSIONES_PERMITIDAS:
+        return JSONResponse(
+            status_code=400,
+            content={"aprobado": False, "detalle": f"Extensión '{extension}' no permitida"}
+        )
 
+    # Validar tipo MIME real con python-magic
+ # Validar tipo MIME real con python-magic
+    try:
+        tipo_real = magic.from_buffer(contenido, mime=True)
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"aprobado": False, "detalle": f"No se pudo determinar el tipo del archivo: {str(e)}"}
+        )
+
+    if tipo_real not in TIPOS_PERMITIDOS:
+        return JSONResponse(
+            status_code=400,
+            content={"aprobado": False, "detalle": f"Tipo MIME real '{tipo_real}' no permitido"}
+        )
+
+    # Si todo está OK
     return {"aprobado": True}
 
 

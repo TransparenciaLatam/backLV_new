@@ -15,5 +15,5 @@ python-jose[cryptography]
 python-dotenv
 SQLAlchemy
 pydantic[email]
-python-magic
+python-magic-bin
 httpx
