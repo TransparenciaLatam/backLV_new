@@ -16,3 +16,4 @@ python-dotenv
 SQLAlchemy
 pydantic[email]
 python-magic
+httpx

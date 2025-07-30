@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from collections import defaultdict
 
 from psycopg2.extras import RealDictCursor
@@ -38,6 +39,46 @@ app.add_middleware(
 )
 
 router = APIRouter()
+
+
+#pip install httpx
+# import httpx
+
+# # Tu clave secreta de reCAPTCHA v3
+# RECAPTCHA_SECRET_KEY = "6Lc2kJQrAAAAABbFc_9ximQMb0f6RCcnD0ny9jaE"
+
+# class FormData(BaseModel):
+#     nombre: str
+#     email: str
+#     recaptcha_token: str
+
+# @app.post("/verificar-recaptcha")
+# async def verificar_recaptcha(data: FormData):
+#     async with httpx.AsyncClient() as client:
+#         response = await client.post(
+#             "https://www.google.com/recaptcha/api/siteverify",
+#             data={
+#                 "secret": RECAPTCHA_SECRET_KEY,
+#                 "response": data.recaptcha_token,
+#             }
+#         )
+
+#     result = response.json()
+
+#     if not result.get("success"):
+#         raise HTTPException(status_code=400, detail="Verificación reCAPTCHA fallida")
+
+#     return {
+#         "success": result["success"],
+#         "score": result.get("score", 0.0),
+#         "action": result.get("action", "")
+#     }
+
+
+
+
+
+
 
 # # Carpeta de subida
 # UPLOAD_DIR = Path("archivos_subidos")
@@ -269,48 +310,37 @@ async def get_preguntas_por_categoria(db: Session = Depends(get_db)):
 
 
 
+TIPOS_PERMITIDOS = {
+    "image/jpeg",
+    "image/png",
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # .docx
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",        # .xlsx
+}
 
-# @app.post("/subir-archivo")
-# async def subir_archivo(archivo: UploadFile = File(...)):
-#     extension = Path(archivo.filename).suffix.lower()
-#     content_type = archivo.content_type
+@router.post("/validar-archivo")
+async def validar_archivo(archivo: UploadFile = File(...)):
+    if archivo.content_type not in TIPOS_PERMITIDOS:
+        return JSONResponse(status_code=400, content={"aprobado": False, "detalle": "Tipo de archivo no permitido"})
 
-#     # Verificar extensión permitida
-#     if extension not in TIPOS_PERMITIDOS:
-#         raise HTTPException(status_code=400, detail="Extensión de archivo no permitida")
+    contenido = await archivo.read()
 
-#     # Verificar MIME type declarado
-#     if TIPOS_PERMITIDOS[extension] != content_type:
-#         raise HTTPException(status_code=400, detail="Tipo MIME no coincide con la extensión")
+    if len(contenido) > 10 * 1024 * 1024:
+        return JSONResponse(status_code=400, content={"aprobado": False, "detalle": "El archivo excede el tamaño máximo permitido"})
 
-#     # Leer bytes y validar tamaño
-#     contenido = await archivo.read()
-#     if len(contenido) > MAX_TAMANO_BYTES:
-#         raise HTTPException(status_code=413, detail="Archivo demasiado grande")
+    # Aquí podrías aplicar más validaciones (como antivirus, etc)
 
-#     # Verificar contenido real usando python-magic
-#     tipo_real = magic.from_buffer(contenido, mime=True)
-#     if tipo_real != content_type:
-#         raise HTTPException(status_code=400, detail="El contenido del archivo es sospechoso")
+    return {"aprobado": True}
 
-#     # Volver al inicio del stream
-#     archivo.file.seek(0)
 
-#     # Guardar con nombre aleatorio
-#     nuevo_nombre = f"{uuid.uuid4().hex}{extension}"
-#     destino = UPLOAD_DIR / nuevo_nombre
-
-#     with destino.open("wb") as f:
-#         shutil.copyfileobj(archivo.file, f)
-
-#     # URL pública para recuperar el archivo
-#     url_publica = f"http://localhost:8000/archivos/{nuevo_nombre}"
-
-#     return {"url": url_publica}
 
 
 # # Montar carpeta de archivos estáticos
 # app.mount("/archivos", StaticFiles(directory=UPLOAD_DIR), name="archivos")
+
+
+
+
 
 ##Funcion para traer clienntes por lista
 @router.get("/clientes", response_model=List[ClientOut])
