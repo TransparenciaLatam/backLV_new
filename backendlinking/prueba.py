@@ -27,7 +27,7 @@ from typing import List, Optional
 import re
 import shutil
 import uuid
-import magic  # python-magic
+#import magic  # python-magic
 import os
 import httpx
 
@@ -308,44 +308,44 @@ TIPOS_PERMITIDOS = {
 
 EXTENSIONES_PERMITIDAS = {".jpg", ".jpeg", ".png", ".pdf", ".docx", ".xlsx"}
 
-@router.post("/validar-archivo")
-async def validar_archivo(archivo: UploadFile = File(...)):
-    # Leer contenido
-    contenido = await archivo.read()
+# @router.post("/validar-archivo")
+# async def validar_archivo(archivo: UploadFile = File(...)):
+#     # Leer contenido
+#     contenido = await archivo.read()
 
-    # Validar tamaño (máx. 10MB)
-    if len(contenido) > 10 * 1024 * 1024:
-        return JSONResponse(
-            status_code=400,
-            content={"aprobado": False, "detalle": "El archivo excede el tamaño máximo permitido (10MB)"}
-        )
+#     # Validar tamaño (máx. 10MB)
+#     if len(contenido) > 10 * 1024 * 1024:
+#         return JSONResponse(
+#             status_code=400,
+#             content={"aprobado": False, "detalle": "El archivo excede el tamaño máximo permitido (10MB)"}
+#         )
 
-    # Validar extensión
-    extension = os.path.splitext(archivo.filename)[1].lower()
-    if extension not in EXTENSIONES_PERMITIDAS:
-        return JSONResponse(
-            status_code=400,
-            content={"aprobado": False, "detalle": f"Extensión '{extension}' no permitida"}
-        )
+#     # Validar extensión
+#     extension = os.path.splitext(archivo.filename)[1].lower()
+#     if extension not in EXTENSIONES_PERMITIDAS:
+#         return JSONResponse(
+#             status_code=400,
+#             content={"aprobado": False, "detalle": f"Extensión '{extension}' no permitida"}
+#         )
 
-    # Validar tipo MIME real con python-magic
- # Validar tipo MIME real con python-magic
-    try:
-        tipo_real = magic.from_buffer(contenido, mime=True)
-    except Exception as e:
-        return JSONResponse(
-            status_code=400,
-            content={"aprobado": False, "detalle": f"No se pudo determinar el tipo del archivo: {str(e)}"}
-        )
+#     # Validar tipo MIME real con python-magic
+#  # Validar tipo MIME real con python-magic
+#     try:
+#         tipo_real = magic.from_buffer(contenido, mime=True)
+#     except Exception as e:
+#         return JSONResponse(
+#             status_code=400,
+#             content={"aprobado": False, "detalle": f"No se pudo determinar el tipo del archivo: {str(e)}"}
+#         )
 
-    if tipo_real not in TIPOS_PERMITIDOS:
-        return JSONResponse(
-            status_code=400,
-            content={"aprobado": False, "detalle": f"Tipo MIME real '{tipo_real}' no permitido"}
-        )
+#     if tipo_real not in TIPOS_PERMITIDOS:
+#         return JSONResponse(
+#             status_code=400,
+#             content={"aprobado": False, "detalle": f"Tipo MIME real '{tipo_real}' no permitido"}
+#         )
 
-    # Si todo está OK
-    return {"aprobado": True}
+#     # Si todo está OK
+#     return {"aprobado": True}
 
 
 
