@@ -559,25 +559,52 @@ def obtener_preguntas_por_categoria(
 
 
 
+#COMENTO ESTE BLOQUE PARA SOLUCIONAR EL ERROR AL GUARDAR EL FORMULARIO
+# def crear_formulario(db: Session, datos: FormularioCreate):
+#     preguntas_ids_str = ",".join(str(id) for id in datos.preguntas_ids)
 
+#     nuevo_formulario = FormularioGenerado(
+#         nombre_formulario=datos.nombre_formulario,
+#         preguntas_ids=preguntas_ids_str
+#     )
 
+#     db.add(nuevo_formulario)
+#     db.commit()
+#     db.refresh(nuevo_formulario)
 
-
-
+#     return nuevo_formulario
 
 def crear_formulario(db: Session, datos: FormularioCreate):
-    preguntas_ids_str = ",".join(str(id) for id in datos.preguntas_ids)
+    if not datos.nombre_formulario or not datos.preguntas_ids:
+        return {
+            "status": "error",
+            "message": "Faltan datos obligatorios."
+        }
 
-    nuevo_formulario = FormularioGenerado(
-        nombre_formulario=datos.nombre_formulario,
-        preguntas_ids=preguntas_ids_str
-    )
+    try:
+        preguntas_ids_str = ",".join(str(id) for id in datos.preguntas_ids)
 
-    db.add(nuevo_formulario)
-    db.commit()
-    db.refresh(nuevo_formulario)
+        nuevo_formulario = FormularioGenerado(
+            nombre_formulario=datos.nombre_formulario,
+            preguntas_ids=preguntas_ids_str
+        )
 
-    return nuevo_formulario
+        db.add(nuevo_formulario)
+        db.commit()
+        db.refresh(nuevo_formulario)
+
+        return {
+            "status": "success",
+            "formulario_id": nuevo_formulario.id
+        }
+
+    except Exception as e:
+        db.rollback()
+        return {
+            "status": "error",
+            "message": f"Ocurrió un error: {str(e)}"
+        }
+
 
 @router.post("/guardar_formulario")
 def guardar_formulario(formulario: FormularioCreate, db: Session = Depends(get_db)):
